@@ -8,7 +8,7 @@ program brapack;
 {$R *.res}
 
 uses
-  Windows, System.SysUtils, System.Classes, ZLibExGZ;
+  Windows, System.SysUtils, System.Classes, Zlib, CRCUnit;
 
 {$SETPEFLAGS IMAGE_FILE_RELOCS_STRIPPED}
 
@@ -23,12 +23,12 @@ end;
 
 procedure UnpackBra;
 const
-  gziphdr1: LongWord=$8B1F;
-  gziphdr2: LongWord=$8;
+  ZlibHdr: Word=$DA78;
 var
   FileStream1, FileStream2: TFileStream;
   MemoryStream1, MemoryStream2: TMemoryStream;
   StringList1: TStringList;
+  ZDecompressionStream1: TZDecompressionStream;
   StringBytes: TBytes;
   DataName, OutDir: String;
   FileTablePos, NumOfFiles, DataTime, DataCrc, DataCompSize, DataUnkSize, DataOffset, UnkValue, LongWord1: LongWord;
@@ -75,16 +75,15 @@ begin
       FileStream1.ReadBuffer(UnkValue,4);
       StringList1.Add(DataName+'='+IntToStr(UnkValue)+','+IntToStr(DataTime)+','+IntToStr(DataFlags));
 
-      MemoryStream2.WriteBuffer(gziphdr1,2);
-      MemoryStream2.WriteBuffer(gziphdr2,8);
       MemoryStream2.CopyFrom(FileStream1, DataCompSize-$10);
-      MemoryStream2.WriteBuffer(DataCrc,4);
-      MemoryStream2.WriteBuffer(DataUnkSize,4);
       MemoryStream2.Position:=0;
       ForceDirectories(ExtractFileDir(OutDir+'\'+DataName));
       FileStream2:=TFileStream.Create(OutDir+'\'+DataName, fmCreate or fmOpenWrite or fmShareDenyWrite);
       try
-        GZDecompressStream(MemoryStream2,FileStream2);
+        ZDecompressionStream1:=TZDecompressionStream.Create(MemoryStream2, -15);
+        try
+          FileStream2.CopyFrom(ZDecompressionStream1, 0);
+        finally ZDecompressionStream1.Free end;
       finally FileStream2.Free end;
       MemoryStream2.Clear;
       Writeln('[',StringOfChar('0',Length(IntToStr(NumOfFiles))-Length(IntToStr(i+1)))+IntToStr(i+1)+'/'+IntToStr(NumOfFiles)+'] '+DataName);
@@ -94,6 +93,8 @@ begin
 end;
 
 procedure PackBra;
+type
+  ShiftjisString = type AnsiString(932);
 const
   brahdr: Int64=$200414450;
   ZeroByte: Byte=0;
@@ -101,8 +102,9 @@ var
   FileStream1, FileStream2: TFileStream;
   MemoryStream1, MemoryStream2: TMemoryStream;
   StringList1: TStringList;
+  ZCompressionStream1: TZCompressionStream;
   InputDir, s: String;
-  utfstring: UTF8String;
+  SjisString: ShiftjisString;
   FileTablePos, NumOfFiles, DataOffset, DataTime, DataUnkSize, DataCompSize, DataCrc, UnkValue: LongWord;
   Word1, DataFlags, DataNameLength: Word;
   z, i: Integer;
@@ -131,22 +133,22 @@ begin
         DataTime:=LongWord(StrToInt64(Copy(s,1,i-1)));
         DataFlags:=Word(StrToInt64(Copy(s,i+1)));
 
+        DataCrc:=GetFileCrc(InputDir+'\'+StringList1.Names[z]);
         FileStream2:=TFileStream.Create(InputDir+'\'+StringList1.Names[z], fmOpenRead or fmShareDenyWrite);
         try
-          GZCompressStream(FileStream2, MemoryStream2);
-          //GZCompressStream2(
-          DataUnkSize:=FileStream2.Size;
-          DataCompSize:=MemoryStream2.Size-18;
-          MemoryStream2.Position:=MemoryStream2.Size-8;
-          MemoryStream2.ReadBuffer(DataCrc,4);
-          MemoryStream2.Position:=$A;
-
-          FileStream1.WriteBuffer(DataUnkSize,4);
-          FileStream1.WriteBuffer(DataCompSize,4);
-          FileStream1.WriteBuffer(DataCrc,4);
-          FileStream1.WriteBuffer(UnkValue,4);
-          FileStream1.CopyFrom(MemoryStream2,DataCompSize);
+          ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcMax, -15);
+          try
+            DataUnkSize:=FileStream2.Size;
+            ZCompressionStream1.CopyFrom(FileStream2, FileStream2.Size);
+          finally ZCompressionStream1.Free end;
         finally FileStream2.Free end;
+        DataCompSize:=MemoryStream2.Size;
+        FileStream1.WriteBuffer(DataUnkSize,4);
+        FileStream1.WriteBuffer(DataCompSize,4);
+        FileStream1.WriteBuffer(DataCrc,4);
+        FileStream1.WriteBuffer(UnkValue,4);
+        MemoryStream2.Position:=0;
+        FileStream1.CopyFrom(MemoryStream2,DataCompSize);
         MemoryStream2.Clear;
 
         MemoryStream1.WriteBuffer(DataTime,4);
@@ -154,15 +156,15 @@ begin
         DataCompSize:=DataCompSize+$10;
         MemoryStream1.WriteBuffer(DataCompSize,4);
         MemoryStream1.WriteBuffer(DataUnkSize,4);
-        utfstring:=UTF8String(StringList1.Names[z]);
-        DataNameLength:=Length(utfstring);
+        SjisString:=ShiftjisString(StringList1.Names[z]);
+        DataNameLength:=Length(SjisString);
         Word1:=Pad(DataNameLength,4);
-        if DataNameLength<Word1 then begin utfstring:=utfstring+#0; DataNameLength:=DataNameLength+1 end;
+        if DataNameLength<Word1 then begin SjisString:=SjisString+#0; DataNameLength:=DataNameLength+1 end;
         MemoryStream1.WriteBuffer(Word1,2);
         MemoryStream1.WriteBuffer(DataFlags,2);
         DataOffset:=FileStream1.Size-DataCompSize;
         MemoryStream1.WriteBuffer(DataOffset,4);
-        MemoryStream1.WriteBuffer(utfstring[1], DataNameLength);
+        MemoryStream1.WriteBuffer(SjisString[1], DataNameLength);
         for i:=1 to Word1-DataNameLength do MemoryStream1.WriteBuffer(ZeroByte,1);
         Writeln('[',StringOfChar('0',Length(IntToStr(NumOfFiles))-Length(IntToStr(z+1)))+IntToStr(z+1)+'/'+IntToStr(NumOfFiles)+'] '+StringList1.Names[z]);
       end;
