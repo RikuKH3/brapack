@@ -68,7 +68,7 @@ begin
           StringBytes[Length(StringBytes)-1]:=Byte1;
         end;
       until (Byte1=0) or (MemoryStream1.Position=LongWord1+DataNameLength);
-      DataName:=TEncoding.UTF8.GetString(StringBytes);
+      DataName:=TEncoding.GetEncoding(932).GetString(StringBytes);
       MemoryStream1.Position:=LongWord1+DataNameLength;
 
       FileStream1.Position:=DataOffset+$C;
