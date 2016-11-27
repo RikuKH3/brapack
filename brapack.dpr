@@ -1,4 +1,4 @@
-program Project1;
+program brapack;
 
 {$WEAKLINKRTTI ON}
 {$RTTI EXPLICIT METHODS([]) PROPERTIES([]) FIELDS([])}
