@@ -179,7 +179,7 @@ end;
 
 begin
   try
-    Writeln('Compile Heart BRA Unpacker/Packer v1.0 by RikuKH3');
+    Writeln('Compile Heart BRA Unpacker/Packer v1.1 by RikuKH3');
     Writeln('-------------------------------------------------');
     if ParamCount=0 then begin Writeln('Usage: brapack.exe <input file or folder>'); Readln; exit end;
     if Pos('.', ExtractFileName(ParamStr(1)))=0 then PackBra else UnpackBra;
