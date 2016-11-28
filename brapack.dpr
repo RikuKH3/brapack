@@ -105,8 +105,6 @@ begin
 end;
 
 procedure UnpackBra;
-const
-  ZlibHdr: Word=$DA78;
 var
   FileStream1: TFileStream;
   MemoryStream1, MemoryStream2: TMemoryStream;
