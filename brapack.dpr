@@ -14,7 +14,7 @@ uses
 
 function CalculateCRC32(AStream : TStream): Cardinal;
 const
-  CRC32Table:  ARRAY[0..255] OF DWORD =
+  CRC32Table:  ARRAY[0..255] of Cardinal =
    ($00000000, $77073096, $EE0E612C, $990951BA,
     $076DC419, $706AF48F, $E963A535, $9E6495A3,
     $0EDB8832, $79DCB8A4, $E0D5E91E, $97D2D988,
@@ -162,7 +162,7 @@ begin
         MemoryStream2.CopyFrom(ZDecompressionStream1, DataUnkSize);
       finally ZDecompressionStream1.Free end;
       MemoryStream2.Position:=0;
-      if not (DataCrc=CalculateCRC32(MemoryStream2)) then begin Writeln('Error: CRC32 mismatch'); Readln; exit end;
+      if not (DataCrc=CalculateCRC32(MemoryStream2)) then begin Writeln('Error: CRC32 mismatch in archive footer'); Readln; exit end;
       MemoryStream2.SaveToFile(OutDir+'\'+DataName);
       MemoryStream2.Clear;
       Writeln('[',StringOfChar('0',Length(IntToStr(NumOfFiles))-Length(IntToStr(i+1)))+IntToStr(i+1)+'/'+IntToStr(NumOfFiles)+'] '+DataName);
