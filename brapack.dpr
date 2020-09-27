@@ -105,17 +105,16 @@ begin
 end;
 
 procedure UnpackBra;
-type
-  ShiftjisString = type AnsiString(932);
 var
   FileStream1, FileStream2: TFileStream;
   MemoryStream1, MemoryStream2: TMemoryStream;
   StringList1: TStringList;
   ZDecompressionStream1: TZDecompressionStream;
-  SjisString: ShiftjisString;
+  StringBytes: TBytes;
   DataName, OutDir: String;
   FileTablePos, NumOfFiles, DataTime, DataCrc, DataCompSize, DataUnkSize, DataOffset, UnkValue, LongWord1: LongWord;
   DataNameLength, DataFlags: Word;
+  Byte1: Byte;
   i: Integer;
 begin
   OutDir:=ExpandFileName(Copy(ParamStr(1),1,Length(ParamStr(1))-Length(ExtractFileExt(ParamStr(1)))));
@@ -140,9 +139,17 @@ begin
       MemoryStream1.ReadBuffer(DataOffset,4);
 
       LongWord1:=MemoryStream1.Position;
-      SetLength(SjisString, DataNameLength);
-      MemoryStream1.ReadBuffer(SjisString[1], DataNameLength);
-      DataName := TrimRight(String(SjisString));
+      SetLength(StringBytes,0);
+      repeat
+        MemoryStream1.ReadBuffer(Byte1,1);
+        if not (Byte1=0) then
+        begin
+          SetLength(StringBytes, Length(StringBytes)+1);
+          StringBytes[Length(StringBytes)-1]:=Byte1;
+        end;
+      until (Byte1=0) or (MemoryStream1.Position=LongWord1+DataNameLength);
+      DataName:=TEncoding.GetEncoding(932).GetString(StringBytes);
+      MemoryStream1.Position:=LongWord1+DataNameLength;
 
       FileStream1.Position:=DataOffset+$C;
       FileStream1.ReadBuffer(UnkValue,4);
