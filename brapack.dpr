@@ -150,7 +150,7 @@ begin
 
       ForceDirectories(ExtractFileDir(OutDir+'\'+DataName));
 
-      if (DataUnkSize+$10)=DataCompSize then begin
+      if (UnkValue = 0) then begin
         FileStream2:=TFileStream.Create(OutDir+'\'+DataName, fmCreate or fmOpenWrite or fmShareDenyWrite);
         try
           if (DataUnkSize > 0) then FileStream2.CopyFrom(FileStream1, DataUnkSize);
@@ -268,7 +268,7 @@ end;
 
 begin
   try
-    Writeln('Compile Heart BRA Unpacker/Packer v1.3 by RikuKH3');
+    Writeln('Compile Heart BRA Unpacker/Packer v1.4 by RikuKH3');
     Writeln('-------------------------------------------------');
     if ParamCount=0 then begin Writeln('Usage: brapack.exe <input file or folder> [-zcFastest]'); Readln; exit end;
     if Pos('.', ExtractFileName(ParamStr(1)))=0 then PackBra else UnpackBra;
