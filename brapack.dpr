@@ -105,17 +105,18 @@ begin
 end;
 
 procedure UnpackBra;
+type
+  ShiftjisString = type AnsiString(932);
 var
-  FileStream1: TFileStream;
+  FileStream1, FileStream2: TFileStream;
   MemoryStream1, MemoryStream2: TMemoryStream;
   StringList1: TStringList;
   ZDecompressionStream1: TZDecompressionStream;
-  StringBytes: TBytes;
+  SjisString: ShiftjisString;
   DataName, OutDir: String;
   FileTablePos, NumOfFiles, DataTime, DataCrc, DataCompSize, DataUnkSize, DataOffset, UnkValue, LongWord1: LongWord;
   DataNameLength, DataFlags: Word;
   i: Integer;
-  Byte1: Byte;
 begin
   OutDir:=ExpandFileName(Copy(ParamStr(1),1,Length(ParamStr(1))-Length(ExtractFileExt(ParamStr(1)))));
   FileStream1:=TFileStream.Create(ParamStr(1), fmOpenRead or fmShareDenyWrite); MemoryStream1:=TMemoryStream.Create; MemoryStream2:=TMemoryStream.Create; StringList1:=TStringList.Create;
@@ -129,8 +130,7 @@ begin
     MemoryStream1.CopyFrom(FileStream1,FileStream1.Size-FileTablePos);
     MemoryStream1.Position:=0;
 
-    for i:=0 to NumOfFiles-1 do
-    begin
+    for i:=0 to NumOfFiles-1 do begin
       MemoryStream1.ReadBuffer(DataTime,4);
       MemoryStream1.ReadBuffer(DataCrc,4);
       MemoryStream1.ReadBuffer(DataCompSize,4);
@@ -140,31 +140,31 @@ begin
       MemoryStream1.ReadBuffer(DataOffset,4);
 
       LongWord1:=MemoryStream1.Position;
-      SetLength(StringBytes,0);
-      repeat
-        MemoryStream1.ReadBuffer(Byte1,1);
-        if not (Byte1=0) then
-        begin
-          SetLength(StringBytes, Length(StringBytes)+1);
-          StringBytes[Length(StringBytes)-1]:=Byte1;
-        end;
-      until (Byte1=0) or (MemoryStream1.Position=LongWord1+DataNameLength);
-      DataName:=TEncoding.GetEncoding(932).GetString(StringBytes);
-      MemoryStream1.Position:=LongWord1+DataNameLength;
+      SetLength(SjisString, DataNameLength);
+      MemoryStream1.ReadBuffer(SjisString[1], DataNameLength);
+      DataName := TrimRight(String(SjisString));
 
       FileStream1.Position:=DataOffset+$C;
       FileStream1.ReadBuffer(UnkValue,4);
       StringList1.Add(DataName+'='+IntToStr(UnkValue)+','+IntToStr(DataTime)+','+IntToStr(DataFlags));
 
       ForceDirectories(ExtractFileDir(OutDir+'\'+DataName));
-      ZDecompressionStream1:=TZDecompressionStream.Create(FileStream1, -15);
-      try
-        MemoryStream2.CopyFrom(ZDecompressionStream1, DataUnkSize);
-      finally ZDecompressionStream1.Free end;
-      MemoryStream2.Position:=0;
-      if not (DataCrc=CalculateCRC32(MemoryStream2)) then begin Writeln('Error: CRC32 mismatch in archive footer'); Readln; exit end;
-      MemoryStream2.SaveToFile(OutDir+'\'+DataName);
-      MemoryStream2.Clear;
+
+      if (DataUnkSize+$10)=DataCompSize then begin
+        FileStream2:=TFileStream.Create(OutDir+'\'+DataName, fmCreate or fmOpenWrite or fmShareDenyWrite);
+        try
+          if (DataUnkSize > 0) then FileStream2.CopyFrom(FileStream1, DataUnkSize);
+        finally FileStream2.Free end;
+      end else begin
+        ZDecompressionStream1:=TZDecompressionStream.Create(FileStream1, -15);
+        try
+          MemoryStream2.CopyFrom(ZDecompressionStream1, DataUnkSize);
+        finally ZDecompressionStream1.Free end;
+        MemoryStream2.Position:=0;
+        if not (DataCrc=CalculateCRC32(MemoryStream2)) then begin Writeln('Error: CRC32 mismatch in archive footer'); Readln; exit end;
+        MemoryStream2.SaveToFile(OutDir+'\'+DataName);
+        MemoryStream2.Clear;
+      end;
       Writeln('[',StringOfChar('0',Length(IntToStr(NumOfFiles))-Length(IntToStr(i+1)))+IntToStr(i+1)+'/'+IntToStr(NumOfFiles)+'] '+DataName);
     end;
     StringList1.SaveToFile(OutDir+'\bra_filelist.txt', TEncoding.UTF8);
@@ -214,26 +214,31 @@ begin
 
         FileStream2:=TFileStream.Create(InputDir+'\'+StringList1.Names[z], fmOpenRead or fmShareDenyWrite);
         try
-          DataCrc:=CalculateCRC32(FileStream2);
-          FileStream2.Position:=0;
+          DataUnkSize := FileStream2.Size;
+          DataCrc := CalculateCRC32(FileStream2);
+          FileStream2.Position := 0;
 
-          if ParamCount>1 then
-            if LowerCase(Copy(ParamStr(2),2))='zcfastest' then ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcFastest, -15) else ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcMax, -15)
-          else ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcMax, -15); //15 is default Zlib value
+          if (UnkValue <> 0) then begin
+            if ParamCount>1 then
+              if LowerCase(Copy(ParamStr(2),2))='zcfastest' then ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcFastest, -15) else ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcMax, -15)
+            else ZCompressionStream1:=TZCompressionStream.Create(MemoryStream2, zcMax, -15); //15 is default Zlib value
+            try
+              ZCompressionStream1.CopyFrom(FileStream2, DataUnkSize);
+            finally ZCompressionStream1.Free end;
+            DataCompSize := MemoryStream2.Size;
+          end else DataCompSize := DataUnkSize;
 
-          try
-            DataUnkSize:=FileStream2.Size;
-            ZCompressionStream1.CopyFrom(FileStream2, FileStream2.Size);
-          finally ZCompressionStream1.Free end;
+          FileStream1.WriteBuffer(DataUnkSize,4);
+          FileStream1.WriteBuffer(DataCompSize,4);
+          FileStream1.WriteBuffer(DataCrc,4);
+          FileStream1.WriteBuffer(UnkValue,4);
+
+          if (UnkValue <> 0) then begin
+            MemoryStream2.Position:=0;
+            FileStream1.CopyFrom(MemoryStream2, DataCompSize);
+            MemoryStream2.Clear;
+          end else FileStream1.CopyFrom(FileStream2, DataUnkSize);
         finally FileStream2.Free end;
-        DataCompSize:=MemoryStream2.Size;
-        FileStream1.WriteBuffer(DataUnkSize,4);
-        FileStream1.WriteBuffer(DataCompSize,4);
-        FileStream1.WriteBuffer(DataCrc,4);
-        FileStream1.WriteBuffer(UnkValue,4);
-        MemoryStream2.Position:=0;
-        FileStream1.CopyFrom(MemoryStream2,DataCompSize);
-        MemoryStream2.Clear;
 
         MemoryStream1.WriteBuffer(DataTime,4);
         MemoryStream1.WriteBuffer(DataCrc,4);
@@ -263,7 +268,7 @@ end;
 
 begin
   try
-    Writeln('Compile Heart BRA Unpacker/Packer v1.2 by RikuKH3');
+    Writeln('Compile Heart BRA Unpacker/Packer v1.3 by RikuKH3');
     Writeln('-------------------------------------------------');
     if ParamCount=0 then begin Writeln('Usage: brapack.exe <input file or folder> [-zcFastest]'); Readln; exit end;
     if Pos('.', ExtractFileName(ParamStr(1)))=0 then PackBra else UnpackBra;
